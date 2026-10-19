@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: Build & Publish (${{ matrix.runtime }})
+    name: Build (${{ matrix.runtime }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,10 +35,10 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Restore dependencies
+      - name: Restore
         run: dotnet restore src/XGJPlusCore/XGJPlus.csproj
 
-      - name: Publish single-file
+      - name: Publish single-file self-contained
         run: |
           dotnet publish src/XGJPlusCore/XGJPlus.csproj \
             -c Release \
@@ -49,13 +49,22 @@ jobs:
             -p:EnableCompressionInSingleFile=true \
             -p:PublishTrimmed=true \
             -p:TrimMode=link \
-            -o ./artifacts/${{ matrix.runtime }}
+            -o ./publish
+
+      - name: Rename with runtime suffix
+        run: |
+          cd publish
+          if [[ "${{ matrix.runtime }}" == win-* ]]; then
+            mv XGJPlus.exe "XGJPlus-${{ matrix.runtime }}.exe"
+          else
+            mv XGJPlus "XGJPlus-${{ matrix.runtime }}"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: XGJPlus-${{ matrix.runtime }}
-          path: ./artifacts/${{ matrix.runtime }}
+          path: ./publish/
           if-no-files-found: error
 
   release:
@@ -68,55 +77,44 @@ jobs:
         id: version
         run: |
           VERSION=$(date +"%Y.%m.%d.%H")
-          TAG="v${VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "Release version: ${TAG}"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Tag: v${VERSION}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ./artifacts
-          merge-multiple: false
+          path: ./bundle
+          merge-multiple: true
 
-      - name: Package archives
-        run: |
-          cd artifacts
-          for dir in */; do
-            runtime="${dir%/}"
-            if [[ "$runtime" == win-* ]]; then
-              zip -r "XGJPlus-${runtime}.zip" "$runtime"
-            else
-              tar -czf "XGJPlus-${runtime}.tar.gz" "$runtime"
-            fi
-          done
-          echo "--- Packaged files ---"
-          ls -la *.zip *.tar.gz 2>/dev/null
+      - name: Show bundle contents
+        run: ls -lh ./bundle/
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release & upload raw binaries
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: "Release ${{ steps.version.outputs.tag }}"
+          name: "XGJPlus .NET Core ${{ steps.version.outputs.tag }}"
           body: |
-            ## XGJPlus .NET Core v${{ steps.version.outputs.version }}
+            ## ${{ steps.version.outputs.tag }}
 
-            - 8 平台单文件自包含发布
-            - 基于 .NET 10
-            - 继承原项目 AGPL-3.0-only 许可证
+            8 平台单文件自包含发布，直接下载即可运行，无需安装 .NET Runtime。
 
-            ### 运行方式
+            ### 运行
 
             ```bash
             # Windows
-            XGJPlus.exe
+            XGJPlus-win-x64.exe
 
-            # Linux / macOS
-            chmod +x XGJPlus && ./XGJPlus
+            # Linux (x64)
+            chmod +x XGJPlus-linux-x64 && ./XGJPlus-linux-x64
+
+            # macOS (Apple Silicon)
+            chmod +x XGJPlus-osx-arm64 && ./XGJPlus-osx-arm64
             ```
 
-            ### 产物列表
-            ${{ join(github.workflow_run.pull_requests, '') }}
-          files: |
-            artifacts/*.zip
-            artifacts/*.tar.gz
+            ### 许可证
+
+            继承原项目 [AGPL-3.0-only](https://www.gnu.org/licenses/agpl-3.0.html)。
+          files: ./bundle/*
+          make_latest: true
