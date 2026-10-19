@@ -1,0 +1,98 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: Build & Publish (${{ matrix.runtime }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: win-x64
+            ext: exe
+          - runtime: win-x86
+            ext: exe
+          - runtime: win-arm64
+            ext: exe
+          - runtime: linux-x64
+            ext: bin
+          - runtime: linux-arm64
+            ext: bin
+          - runtime: linux-arm
+            ext: bin
+          - runtime: osx-x64
+            ext: bin
+          - runtime: osx-arm64
+            ext: bin
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore src/XGJPlusCore/XGJPlus.csproj
+
+      - name: Publish single-file
+        run: |
+          dotnet publish src/XGJPlusCore/XGJPlus.csproj \
+            -c Release \
+            -r ${{ matrix.runtime }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:PublishTrimmed=true \
+            -p:TrimMode=link \
+            -o ./artifacts/${{ matrix.runtime }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XGJPlus-${{ matrix.runtime }}
+          path: ./artifacts/${{ matrix.runtime }}
+
+  release:
+    name: Upload to GitHub Release
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: false
+
+      - name: Package archives
+        run: |
+          cd artifacts
+          for dir in */; do
+            runtime="${dir%/}"
+            if [[ "$runtime" == win-* ]]; then
+              zip -r "XGJPlus-${runtime}.zip" "$runtime"
+            else
+              tar -czf "XGJPlus-${runtime}.tar.gz" "$runtime"
+            fi
+          done
+          ls -la
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./artifacts/*.zip
+          fail_on_unmatched_files: false

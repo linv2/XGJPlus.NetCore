@@ -1,0 +1,26 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.pdb
+*.dll
+*.exe
+*.deps.json
+*.runtimeconfig.json
+*.nuspec
+*.nupkg
+
+# VS / Rider
+.vs/
+.vscode/
+.idea/
+*.csproj.user
+
+# 运行时数据
+cache.json
+*.xlsx
+
+# OS
+.DS_Store
+Thumbs.db
