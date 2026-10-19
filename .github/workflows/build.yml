@@ -5,8 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  release:
-    types: [published]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -17,21 +18,13 @@ jobs:
       matrix:
         include:
           - runtime: win-x64
-            ext: exe
           - runtime: win-x86
-            ext: exe
           - runtime: win-arm64
-            ext: exe
           - runtime: linux-x64
-            ext: bin
           - runtime: linux-arm64
-            ext: bin
           - runtime: linux-arm
-            ext: bin
           - runtime: osx-x64
-            ext: bin
           - runtime: osx-arm64
-            ext: bin
 
     steps:
       - name: Checkout code
@@ -63,15 +56,23 @@ jobs:
         with:
           name: XGJPlus-${{ matrix.runtime }}
           path: ./artifacts/${{ matrix.runtime }}
+          if-no-files-found: error
 
   release:
-    name: Upload to GitHub Release
+    name: Auto Release
     needs: build
-    if: github.event_name == 'release'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
+      - name: Generate version tag
+        id: version
+        run: |
+          VERSION=$(date +"%Y.%m.%d.%H")
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Release version: ${TAG}"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -89,10 +90,33 @@ jobs:
               tar -czf "XGJPlus-${runtime}.tar.gz" "$runtime"
             fi
           done
-          ls -la
+          echo "--- Packaged files ---"
+          ls -la *.zip *.tar.gz 2>/dev/null
 
-      - name: Upload release assets
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ./artifacts/*.zip
-          fail_on_unmatched_files: false
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Release ${{ steps.version.outputs.tag }}"
+          body: |
+            ## XGJPlus .NET Core v${{ steps.version.outputs.version }}
+
+            - 8 平台单文件自包含发布
+            - 基于 .NET 10
+            - 继承原项目 AGPL-3.0-only 许可证
+
+            ### 运行方式
+
+            ```bash
+            # Windows
+            XGJPlus.exe
+
+            # Linux / macOS
+            chmod +x XGJPlus && ./XGJPlus
+            ```
+
+            ### 产物列表
+            ${{ join(github.workflow_run.pull_requests, '') }}
+          files: |
+            artifacts/*.zip
+            artifacts/*.tar.gz
